@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medication Recommender</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Medication Recommender</h1>
+        </header>
+        
+        <main>
+            <section class="search-section">
+                <h2>Enter your symptoms and information</h2>
+                
+                {% if error %}
+                <div class="error-message">{{ error }}</div>
+                {% endif %}
+                
+                <form action="/recommend" method="post" id="recommendForm">
+                    <div class="form-group">
+                        <label for="gender">Gender:</label>
+                        <select id="gender" name="gender" required>
+                            <option value="">Select gender</option>
+                            <option value="male">Male</option>
+                            <option value="female">Female</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="age">Age:</label>
+                        <input type="text" id="age" name="age" placeholder="e.g., 35" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="allergic">Allergies (if none, type 'none'):</label>
+                        <input type="text" id="allergic" name="allergic" placeholder="e.g., penicillin, aspirin" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="symptoms">Symptoms (separate with commas):</label>
+                        <input type="text" id="symptoms" name="symptoms" placeholder="e.g., headache, fever, sore throat" required>
+                    </div>
+                    
+                    <button type="submit" class="submit-btn">Get Recommendations</button>
+                </form>
+            </section>
+            
+            <section class="info-section">
+                <h2>About This Service</h2>
+                <ul>
+                    <li>Enter your symptoms to get medication recommendations</li>
+                    <li>Find nearby pharmacies using your zipcode</li>
+                    <li>View side effects and medication details</li>
+                    <li>This service is for informational purposes only</li>
+                </ul>
+            </section>
+        </main>
+        <div class="loading-screen" id="loadingScreen" style="display: none;">
+            <div class="loading-content">
+                <div class="loading-spinner"></div>
+                <div class="loading-text">Searching for medications...</div>
+                <div class="loading-subtext">Analyzing your symptoms</div>
+            </div>
+        </div>
+        
+        <footer>
+            <p>&copy; 2025 Medication Recommender - Powered by Perplexity API</p>
+            <p>This service cannot replace medical advice and is for informational purposes only.</p>
+        </footer>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const form = document.getElementById('recommendForm');
+            const loadingScreen = document.getElementById('loadingScreen');
+            
+            form.addEventListener('submit', function() {
+                if (form.checkValidity()) {
+                    loadingScreen.style.display = 'flex';
+                }
+            });
+        });
+    </script>
+</body>
+</html>
