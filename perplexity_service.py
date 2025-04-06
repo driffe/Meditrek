@@ -164,3 +164,59 @@ class PerplexityService:
             "cvs_link": f"https://www.cvs.com/search?searchTerm={encoded_search}",
             "walgreens_link": f"https://www.walgreens.com/search/results.jsp?Ntt={encoded_search}",
         }
+
+    def get_symptom_management_lists(self, symptoms: List[str]) -> Dict[str, List[str]]:
+        """Get to-do list and do-not list based on symptoms."""
+        symptoms_text = ", ".join(symptoms)
+        
+        query = (
+            f"I have the following symptoms: {symptoms_text}. "
+            f"Please provide two lists: "
+            f"1. A list of things I SHOULD do to manage these symptoms (to-do list) "
+            f"2. A list of things I should NOT do (do-not list) "
+            f"Format the response as: "
+            f"TO-DO LIST:\n"
+            f"1. [item]\n"
+            f"2. [item]\n"
+            f"...\n"
+            f"DO-NOT LIST:\n"
+            f"1. [item]\n"
+            f"2. [item]\n"
+            f"..."
+        )
+        
+        response_text = self.query_perplexity(query)
+        if not response_text:
+            return {"to_do_list": [], "do_not_list": []}
+        
+        return self.parse_management_lists(response_text)
+    
+    def parse_management_lists(self, response_text: str) -> Dict[str, List[str]]:
+        """Parse the response text into to-do list and do-not list."""
+        result = {
+            "to_do_list": [],
+            "do_not_list": []
+        }
+        
+        try:
+            # Split the response into to-do and do-not sections
+            sections = response_text.split("DO-NOT LIST:")
+            if len(sections) != 2:
+                return result
+                
+            to_do_section = sections[0].replace("TO-DO LIST:", "").strip()
+            do_not_section = sections[1].strip()
+            
+            # Parse to-do list
+            to_do_items = re.findall(r'\d+\.\s*([^\n]+)', to_do_section)
+            result["to_do_list"] = [item.strip() for item in to_do_items if item.strip()]
+            
+            # Parse do-not list
+            do_not_items = re.findall(r'\d+\.\s*([^\n]+)', do_not_section)
+            result["do_not_list"] = [item.strip() for item in do_not_items if item.strip()]
+            
+            return result
+            
+        except Exception as e:
+            logger.exception(f"Error parsing management lists: {e}, response_text: {response_text}")
+            return result

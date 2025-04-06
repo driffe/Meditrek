@@ -33,6 +33,7 @@
                 <div class="tab-navigation">
                     <button class="tab-btn active" data-tab="medications">Medications</button>
                     <button class="tab-btn" data-tab="pharmacies">Nearby Pharmacies</button>
+                    <button class="tab-btn" data-tab="management">Management Lists</button>
                 </div>
                 
                 <!-- Medication Tab-->
@@ -104,6 +105,33 @@
                             </div>
                             
                             <div class="pharmacy-list">
+                            </div>
+                        </div>
+                    </section>
+                </div>
+                
+                <!-- Management Lists tab -->
+                <div class="tab-content" id="management-tab">
+                    <section class="management-section">
+                        <h2>Symptom Management Lists</h2>
+                        
+                        <div class="management-lists">
+                            <div class="to-do-list">
+                                <h3>Things You Should Do</h3>
+                                <ul>
+                                    {% for item in to_do_list %}
+                                    <li>{{ item }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                            
+                            <div class="do-not-list">
+                                <h3>Things You Should Avoid</h3>
+                                <ul>
+                                    {% for item in do_not_list %}
+                                    <li>{{ item }}</li>
+                                    {% endfor %}
+                                </ul>
                             </div>
                         </div>
                     </section>

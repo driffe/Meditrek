@@ -807,3 +807,75 @@
       padding: 12px 30px;
     }
   }
+
+  /* Management Lists Styles */
+  .management-section {
+    background-color: var(--card-color);
+    border-radius: var(--border-radius);
+    padding: 30px;
+    box-shadow: var(--shadow);
+  }
+
+  .management-lists {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 30px;
+    margin-top: 20px;
+  }
+
+  .to-do-list, .do-not-list {
+    background-color: var(--background-color);
+    border-radius: var(--border-radius);
+    padding: 25px;
+    box-shadow: var(--shadow);
+  }
+
+  .to-do-list h3, .do-not-list h3 {
+    color: var(--primary-dark);
+    margin-bottom: 15px;
+    font-size: 1.3rem;
+  }
+
+  .to-do-list ul, .do-not-list ul {
+    list-style: none;
+    padding: 0;
+  }
+
+  .to-do-list li, .do-not-list li {
+    padding: 12px 15px;
+    margin-bottom: 10px;
+    border-radius: var(--border-radius);
+    background-color: var(--card-color);
+    box-shadow: var(--shadow);
+    transition: var(--transition);
+  }
+
+  .to-do-list li:hover {
+    transform: translateX(5px);
+    box-shadow: var(--hover-shadow);
+  }
+
+  .do-not-list li:hover {
+    transform: translateX(-5px);
+    box-shadow: var(--hover-shadow);
+  }
+
+  .to-do-list li::before {
+    content: "✓";
+    color: var(--secondary-color);
+    margin-right: 10px;
+    font-weight: bold;
+  }
+
+  .do-not-list li::before {
+    content: "✕";
+    color: var(--accent-color);
+    margin-right: 10px;
+    font-weight: bold;
+  }
+
+  @media (max-width: 768px) {
+    .management-lists {
+      grid-template-columns: 1fr;
+    }
+  }
