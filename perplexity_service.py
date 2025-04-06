@@ -38,7 +38,7 @@ class PerplexityService:
         if not self.api_key:
             logger.warning("Perplexity API key not found in environment variables")
     
-    def query_perplexity(self, query: str, max_retries: int = 3, timeout: int = 15) -> Optional[str]:
+    def query_perplexity(self, query: str, max_retries: int = 2, timeout: int = 5) -> Optional[str]:
         """Send a query to the Perplexity API using requests."""
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -79,23 +79,31 @@ class PerplexityService:
                 
             except requests.exceptions.Timeout as e:
                 retries += 1
-                wait_time = 2 ** retries  # Exponential backoff
-                logger.warning(f"Attempt {retries}/{max_retries} failed: {e}. Retrying in {wait_time}s...")
-                time.sleep(wait_time)
+                wait_time = 1  # 고정된 대기 시간으로 변경
+                if retries < max_retries:
+                    logger.warning(f"Attempt {retries}/{max_retries} failed: {e}. Retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"Final attempt failed: {e}")
+                    return None
                 
             except requests.exceptions.HTTPError as e:
                 logger.error(f"HTTP Error: {e}")
-                raise PerplexityAPIError(f"HTTP Error: {e}")
+                return None
                 
             except requests.exceptions.ConnectionError as e:
                 retries += 1
-                wait_time = 2 ** retries  # Exponential backoff
-                logger.warning(f"Connection error (attempt {retries}/{max_retries}): {e}. Retrying in {wait_time}s...")
-                time.sleep(wait_time)
+                wait_time = 1  # 고정된 대기 시간으로 변경
+                if retries < max_retries:
+                    logger.warning(f"Connection error (attempt {retries}/{max_retries}): {e}. Retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"Final attempt failed: {e}")
+                    return None
                 
             except Exception as e:
                 logger.error(f"Unexpected Error: {e}")
-                raise PerplexityAPIError(f"Unexpected Error: {e}")
+                return None
         
         logger.error(f"Failed after {max_retries} retries")
         return None
