@@ -141,56 +141,60 @@ class PerplexityService:
                     "side_effects": "Not available",
                 }
 
-                # Extract medication name
+                # Extract medication name - Improved pattern
                 name_patterns = [
                     r'(?:brand name|medication|name):\s*([^\n]+)',
                     r'^(?:\d+\.\s*)?([^:\n]+)(?::|$)',
-                    r'(\w+(?:\s+\w+)*\s*\([^)]*)'  
+                    r'(?:^|\n)([A-Za-z0-9\s\-]+(?:\([^)]*\))?)(?=\s*(?:type|form|side effects|pill|tablet|liquid|gel|capsule|cream|ointment|lotion|powder))'
                 ]
 
                 for pattern in name_patterns:
                     name_match = re.search(pattern, section, re.IGNORECASE | re.MULTILINE)
                     if name_match:
                         medication_name = name_match.group(1).strip()
-                        # 괄호가 닫히지 않은 경우 처리
-                        if '(' in medication_name and ')' not in medication_name:
-                            # 괄호를 제거하거나 괄호 닫기 추가
-                            if medication_name.count('(') == 1:
-                                medication_name = medication_name.split('(')[0].strip()
-                        medication_info["name"] = medication_name
-                        break
+                        # Remove any asterisks or special characters
+                        medication_name = re.sub(r'[\*\-]+', '', medication_name).strip()
+                        if medication_name and not medication_name.startswith('**'):
+                            medication_info["name"] = medication_name
+                            break
 
-                # Extract medication type
+                # Extract medication type - Improved pattern
                 type_patterns = [
                     r'(?:type of medication|form):\s*([^\n]+)',
-                    r'(?:pill|tablet|liquid|gel|capsule|cream|ointment|lotion|powder)s?'
+                    r'(?:pill|tablet|liquid|gel|capsule|cream|ointment|lotion|powder)s?(?:\s*,\s*(?:pill|tablet|liquid|gel|capsule|cream|ointment|lotion|powder)s?)*'
                 ]
 
                 for pattern in type_patterns:
                     type_match = re.search(pattern, section, re.IGNORECASE)
                     if type_match:
                         if len(type_match.groups()) > 0:
-                            medication_info["medication_type"] = type_match.group(1).strip()
+                            medication_type = type_match.group(1).strip()
                         else:
-                            medication_info["medication_type"] = type_match.group(0).strip()
-                        break
+                            medication_type = type_match.group(0).strip()
+                        # Remove any asterisks or special characters
+                        medication_type = re.sub(r'[\*\-]+', '', medication_type).strip()
+                        if medication_type and not medication_type.startswith('**'):
+                            medication_info["medication_type"] = medication_type
+                            break
 
                 # Extract side effects - More resilient approach
                 side_effects_patterns = [
-                    r'side effects:\s*([^\n]+(?:\n\s+[^\n]+)*)',  # Original pattern
-                    r'side effects[^:]*?(?:include|are|:)\s*([^\n]+(?:\n\s+[^\n]+)*)',  # More general
-                    r'(?:adverse effects|warnings):\s*([^\n]+(?:\n\s+[^\n]+)*)',  # Alternate terms
-                    r'(?:may cause|can cause):\s*([^\n]+(?:\n\s+[^\n]+)*)'  # potential start of the phrase
+                    r'side effects:\s*([^\n]+(?:\n\s+[^\n]+)*)',
+                    r'side effects[^:]*?(?:include|are|:)\s*([^\n]+(?:\n\s+[^\n]+)*)',
+                    r'(?:adverse effects|warnings):\s*([^\n]+(?:\n\s+[^\n]+)*)',
+                    r'(?:may cause|can cause):\s*([^\n]+(?:\n\s+[^\n]+)*)'
                 ]
 
                 for pattern in side_effects_patterns:
                     side_effects_match = re.search(pattern, section, re.IGNORECASE)
                     if side_effects_match:
                         try:
-                            # Remove Photo reference from side effects if present
                             side_effects_text = side_effects_match.group(1).strip()
-                            medication_info["side_effects"] = side_effects_text
-                            break  # Exit loop if a match is found
+                            # Remove any asterisks or special characters
+                            side_effects_text = re.sub(r'[\*\-]+', '', side_effects_text).strip()
+                            if side_effects_text and not side_effects_text.startswith('**'):
+                                medication_info["side_effects"] = side_effects_text
+                                break
                         except IndexError as e:
                             logger.error(f"IndexError accessing regex group: {e}, pattern: {pattern}, section: {section}")
 
@@ -209,7 +213,7 @@ class PerplexityService:
 
             return medications
         except Exception as e:
-            logger.exception(f"Error parsing medication recommendations: {e}, response_text: {response_text}")  # Log full exception + response
+            logger.exception(f"Error parsing medication recommendations: {e}, response_text: {response_text}")
             return []
         
     def create_pharmacy_links(self, medication_name):
@@ -222,7 +226,7 @@ class PerplexityService:
         
         return {
             "cvs_link": f"https://www.cvs.com/search?searchTerm={encoded_search}",
-            "walgreens_link": f"https://www.walgreens.com/search/results.jsp?Ntt={encoded_search}",
+            #"walgreens_link": f"https://www.walgreens.com/search/results.jsp?Ntt={encoded_search}",
         }
 
     def get_symptom_management_lists(self, symptoms: List[str]) -> Dict[str, List[str]]:
