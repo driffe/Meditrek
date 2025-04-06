@@ -1,10 +1,11 @@
 {
-    "builds": [
-        {
-            "src": "app.py",
-            "use": "@vercel/python"
+    "version": 2,
+    "functions": {
+        "api/app.py": {
+            "memory": 1024,
+            "maxDuration": 10
         }
-    ],
+    },
     "routes": [
         {
             "src": "/_vercel/insights/script.js",
@@ -16,7 +17,7 @@
         },
         {
             "src": "/(.*)",
-            "dest": "app.py"
+            "dest": "/api/app.py"
         }
     ]
 }

@@ -66,61 +66,34 @@ async def get_form(request: Request):
     )
 
 @app.post("/recommend", response_class=HTMLResponse)
-async def recommend_medication(
-    request: Request,
-    symptoms: str = Form(...),
-    gender: str = Form(None),
-    age: str = Form(None),
-    allergic: str = Form(None),
-    perplexity_service: PerplexityService = Depends(get_perplexity_service)
-):
-    """Process medication recommendation request"""
-    gender = gender or "not specified"
-    age = age or "not specified"
-    allergic = allergic or "none"
-    
+async def recommend(request: Request):
     try:
+        form_data = await request.form()
+        symptoms = form_data.get("symptoms", "")
+        gender = form_data.get("gender", "not specified")
+        age = form_data.get("age", "not specified")
+        allergic = form_data.get("allergic", "none")
+        
         # Split and clean symptoms
         symptom_list = [s.strip() for s in symptoms.split(',') if s.strip()]
         
         if not symptom_list:
             return templates.TemplateResponse(
-                "index.html", 
+                "index.html",
                 {
                     "request": request,
                     "error": "증상을 하나 이상 선택해주세요."
                 }
             )
-
-        # Get medication recommendations via Perplexity API
-        medications = perplexity_service.get_medication_recommendations(
-            symptom_list, 
-            gender, 
-            age, 
-            allergic
-        )
+            
+        perplexity_service = get_perplexity_service()
+        medications, management_lists = perplexity_service.get_combined_recommendations(symptom_list, gender, age, allergic)
+        
         logger.info(f"Received medications: {medications}")
-
-        if medications is None:
-            raise PerplexityAPIError("Failed to get medication recommendations")
+        logger.info(f"Received management lists: {management_lists}")
         
-        if not medications:
-            return templates.TemplateResponse(
-                "index.html",
-                {
-                    "request": request,
-                    "error": "죄송합니다. 해당 증상에 대한 추천 약물을 찾을 수 없습니다."
-                }
-            )
-        
-        # 관리 목록 가져오기
-        management_lists = perplexity_service.get_symptom_management_lists(symptom_list)
-        to_do_list = management_lists.get("to_do_list", [])
-        do_not_list = management_lists.get("do_not_list", [])
-        
-        # 템플릿에 to_do_list와 do_not_list 변수를 추가합니다
         return templates.TemplateResponse(
-            "results.html", 
+            "results.html",
             {
                 "request": request,
                 "medications": medications,
@@ -128,21 +101,24 @@ async def recommend_medication(
                 "gender": gender,
                 "age": age,
                 "allergic": allergic,
-                "to_do_list": to_do_list,
-                "do_not_list": do_not_list
+                "to_do_list": management_lists["to_do_list"],
+                "do_not_list": management_lists["do_not_list"]
             }
         )
         
-    except PerplexityAPIError as e:
-        # 이미 특정 에러 핸들러가 처리할 것이므로 그대로 다시 발생시킴
-        raise
-    except ParsingError as e:
-        # 이미 특정 에러 핸들러가 처리할 것이므로 그대로 다시 발생시킴
-        raise
     except Exception as e:
-        logger.error(f"Error in medication recommendation: {e}")
-        # 일반적인 오류에 대해서는 오류 페이지로 리디렉션
-        raise
+        logger.exception("Error in recommend endpoint")
+        return templates.TemplateResponse(
+            "error.html",
+            {
+                "request": request,
+                "error_title": "오류가 발생했습니다",
+                "error_message": "처리 중 문제가 발생했습니다. 다시 시도해주세요.",
+                "error_detail": str(e),
+                "debug_mode": os.getenv("DEBUG", "False").lower() == "true"
+            },
+            status_code=500
+        )
 
 @app.get("/api/pharmacies")
 async def get_nearby_pharmacies(
