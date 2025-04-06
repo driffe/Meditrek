@@ -5,6 +5,12 @@
             "use": "@vercel/python"
         }
     ],
+    "functions": {
+        "app.py": {
+            "memory": 1024,
+            "maxDuration": 10
+        }
+    },
     "routes": [
         {
             "src": "/_vercel/insights/script.js",
