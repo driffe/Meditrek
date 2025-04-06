@@ -34,12 +34,36 @@ class PerplexityService:
         self.api_key = os.getenv("PERPLEXITY_API_KEY")
         self.api_url = "https://api.perplexity.ai"
         self.last_response = None
+        self._cache = {}
+        self._cache_timeout = 3600  # 1시간 캐시
         
         if not self.api_key:
             logger.warning("Perplexity API key not found in environment variables")
     
-    def query_perplexity(self, query: str, max_retries: int = 3, timeout: int = 15) -> Optional[str]:
+    def _get_cache_key(self, query: str) -> str:
+        """Generate cache key"""
+        return f"query_{hash(query)}"
+
+    def _get_cached_response(self, cache_key: str) -> Optional[str]:
+        """Get cached response"""
+        if cache_key in self._cache:
+            timestamp, response = self._cache[cache_key]
+            if time.time() - timestamp < self._cache_timeout:
+                logger.info("Using cached response")
+                return response
+            else:
+                del self._cache[cache_key]
+        return None
+
+    def _cache_response(self, cache_key: str, response: str):
+        """Cache response"""
+        self._cache[cache_key] = (time.time(), response)
+
+    def query_perplexity(self, query: str, max_retries: int = 2, timeout: int = 5) -> Optional[str]:
         """Send a query to the Perplexity API using requests."""
+        start_time = time.time()
+        logger.info(f"Starting API request for query: {query[:100]}...")
+
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
@@ -56,11 +80,11 @@ class PerplexityService:
         }
         
         retries = 0
-        last_error = None
-        
         while retries < max_retries:
             try:
+                request_start = time.time()
                 logger.info(f"Sending query to Perplexity API (attempt {retries+1}/{max_retries})")
+                
                 response = requests.post(
                     f"{self.api_url}/chat/completions", 
                     headers=headers, 
@@ -75,15 +99,19 @@ class PerplexityService:
                 
                 # Store the last response for debugging
                 self.last_response = response_text
-                logger.info(f"Received response from Perplexity API")
+                request_time = time.time() - request_start
+                total_time = time.time() - start_time
+                
+                logger.info(f"API Response Time: {request_time:.2f}s")
+                logger.info(f"Total Processing Time: {total_time:.2f}s")
+                logger.info(f"Response length: {len(response_text)} characters")
                 
                 return response_text
                 
             except requests.exceptions.Timeout as e:
-                last_error = e
                 retries += 1
+                wait_time = 1  # 고정된 대기 시간으로 변경
                 if retries < max_retries:
-                    wait_time = retries * 2  # 점진적으로 대기 시간 증가
                     logger.warning(f"Attempt {retries}/{max_retries} failed: {e}. Retrying in {wait_time}s...")
                     time.sleep(wait_time)
                 else:
@@ -92,20 +120,12 @@ class PerplexityService:
                 
             except requests.exceptions.HTTPError as e:
                 logger.error(f"HTTP Error: {e}")
-                if e.response.status_code == 429:  # Rate limit
-                    retries += 1
-                    if retries < max_retries:
-                        wait_time = retries * 5  # Rate limit의 경우 더 긴 대기 시간
-                        logger.warning(f"Rate limited. Retrying in {wait_time}s...")
-                        time.sleep(wait_time)
-                        continue
                 return None
                 
             except requests.exceptions.ConnectionError as e:
-                last_error = e
                 retries += 1
+                wait_time = 1  # 고정된 대기 시간으로 변경
                 if retries < max_retries:
-                    wait_time = retries * 2
                     logger.warning(f"Connection error (attempt {retries}/{max_retries}): {e}. Retrying in {wait_time}s...")
                     time.sleep(wait_time)
                 else:
@@ -116,7 +136,7 @@ class PerplexityService:
                 logger.error(f"Unexpected Error: {e}")
                 return None
         
-        logger.error(f"Failed after {max_retries} retries. Last error: {last_error}")
+        logger.error(f"Failed after {max_retries} retries")
         return None
     
     def get_medication_recommendations(self, symptoms: List[str], gender: str, age: str, allergic: str) -> Optional[List[Dict[str, Any]]]:
