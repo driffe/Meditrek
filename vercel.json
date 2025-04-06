@@ -1,33 +1,22 @@
 {
-    "$schema": "https://openapi.vercel.sh/vercel.json",
-    "framework": "fastapi",
-    "regions": ["icn1"],
-    "functions": {
-        "app.py": {
-            "memory": 1024,
-            "maxDuration": 10
-        }
-    },
-    "headers": [
+    "builds": [
         {
-            "source": "/(.*)",
-            "headers": [
-                {
-                    "key": "X-Content-Type-Options",
-                    "value": "nosniff"
-                },
-                {
-                    "key": "X-Frame-Options",
-                    "value": "DENY"
-                },
-                {
-                    "key": "X-XSS-Protection",
-                    "value": "1; mode=block"
-                }
-            ]
+            "src": "app.py",
+            "use": "@vercel/python"
         }
     ],
-    "env": {
-        "PYTHONUNBUFFERED": "1"
-    }
+    "routes": [
+        {
+            "src": "/_vercel/insights/script.js",
+            "dest": "https://va.vercel-scripts.com/v1/script.js"
+        },
+        {
+            "src": "/_vercel/insights/(.*)",
+            "dest": "https://va.vercel-analytics.com/$1"
+        },
+        {
+            "src": "/(.*)",
+            "dest": "app.py"
+        }
+    ]
 }
