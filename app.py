@@ -9,6 +9,8 @@ import logging
 import requests
 import os
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware import Middleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from perplexity_service import PerplexityService, get_perplexity_service, PerplexityAPIError, ParsingError
 
@@ -17,6 +19,14 @@ load_dotenv()
 # Logging configuration
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Vercel Analytics 미들웨어
+class VercelAnalyticsMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        if "text/html" in response.headers.get("content-type", ""):
+            response.headers["x-vercel-analytics"] = "true"
+        return response
 
 # Initialize FastAPI app
 app = FastAPI(title="Meditrek")
@@ -29,6 +39,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(VercelAnalyticsMiddleware)
 
 # Set up static files and templates
 app.mount("/static", StaticFiles(directory="static"), name="static")
