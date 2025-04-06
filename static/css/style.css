@@ -661,7 +661,7 @@
     margin: 5px 0;
   }
   
-  /* Loading Screen */
+  /* 개선된 로딩 스타일 */
   .loading-screen {
     position: fixed;
     top: 0;
@@ -674,12 +674,14 @@
     justify-content: center;
     align-items: center;
     z-index: 1000;
+    transition: opacity 0.5s ease;
   }
-  
+
   .loading-content {
     text-align: center;
+    max-width: 300px;
   }
-  
+
   .loading-spinner {
     width: 70px;
     height: 70px;
@@ -689,16 +691,18 @@
     animation: spin 1.5s linear infinite;
     margin-bottom: 20px;
   }
-  
+
   .loading-text {
     font-size: 1.2rem;
     color: var(--primary-dark);
     margin-bottom: 10px;
+    font-weight: 600;
   }
-  
+
   .loading-subtext {
     color: var(--light-text);
     animation: pulse 1.5s infinite;
+    margin-bottom: 15px;
   }
   
   /* Error Message */

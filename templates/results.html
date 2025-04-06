@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Medication Recommendations</title>
+    <title>Meditrek</title>
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>Medication Recommendations</h1>
+            <h1>Meditrek</h1>
         </header>
         <div class="loading-screen" id="loadingScreen">
             <div class="loading-content">
@@ -47,7 +47,15 @@
                                 <div class="rank-badge">Rank {{ med.rank }}</div>
                                 
                                 <div class="medication-info">
-                                    <h3>{{ med.name }}</h3>
+                                    <!-- 이름이 없을 경우 대체 텍스트 표시 -->
+                                    <h3 style="word-break: break-word; overflow-wrap: break-word;">
+                                        {{ med.name if med.name else "Medication " + med.rank|string }}
+                                    </h3>
+                                    
+                                    <!-- 디버깅용 출력 -->
+                                    <div style="display: none;">
+                                        <pre>{{ med }}</pre>
+                                    </div>
                                     
                                     {% if med.cvs_link %}
                                     <div class="cvs-link-container">
@@ -62,7 +70,7 @@
                                     {% if med.image_url %}
                                     <img src="{{ med.image_url }}" alt="{{ med.name }}" class="medication-image">
                                     {% endif %}
-
+                        
                                     {% if med.medication_type %}
                                     <div class="info-group">
                                         <h4>Type:</h4>
@@ -81,7 +89,7 @@
                             {% endfor %}
                         </div>
                     </section>
-                </div>
+                </div> <!-- 여기에 닫는 태그 추가했습니다 -->
                 
                 <!-- Pharmacy tab -->
                 <div class="tab-content" id="pharmacies-tab">
@@ -119,18 +127,26 @@
                             <div class="to-do-list">
                                 <h3>Things You Should Do</h3>
                                 <ul>
-                                    {% for item in to_do_list %}
-                                    <li>{{ item }}</li>
-                                    {% endfor %}
+                                    {% if to_do_list and to_do_list|length > 0 %}
+                                        {% for item in to_do_list %}
+                                        <li>{{ item }}</li>
+                                        {% endfor %}
+                                    {% else %}
+                                        <li>No recommendations available. Please try again.</li>
+                                    {% endif %}
                                 </ul>
                             </div>
                             
                             <div class="do-not-list">
                                 <h3>Things You Should Avoid</h3>
                                 <ul>
-                                    {% for item in do_not_list %}
-                                    <li>{{ item }}</li>
-                                    {% endfor %}
+                                    {% if do_not_list and do_not_list|length > 0 %}
+                                        {% for item in do_not_list %}
+                                        <li>{{ item }}</li>
+                                        {% endfor %}
+                                    {% else %}
+                                        <li>No recommendations available. Please try again.</li>
+                                    {% endif %}
                                 </ul>
                             </div>
                         </div>
@@ -153,7 +169,6 @@
     </div>
     
     <script>
-        // Show loading screen when form is submitted
         document.addEventListener('DOMContentLoaded', function() {
             // If coming from form submission, show loading screen
             if (document.referrer.includes('/form')) {

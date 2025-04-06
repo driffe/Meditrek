@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, Form, HTTPException
+from fastapi import FastAPI, Request, Form, HTTPException, Depends
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -8,8 +8,9 @@ import uvicorn
 import logging
 import requests
 import os
+from fastapi.middleware.cors import CORSMiddleware
 
-from perplexity_service import PerplexityService
+from perplexity_service import PerplexityService, get_perplexity_service, PerplexityAPIError, ParsingError
 
 load_dotenv()
 
@@ -18,14 +19,23 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize FastAPI app
-app = FastAPI(title="Medication Recommender")
+app = FastAPI(title="Meditrek")
+
+# Enable CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 실제 환경에서는 특정 도메인만 허용하는 것이 좋습니다
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Set up static files and templates
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-# Initialize Perplexity service
-perplexity_service = PerplexityService()
+# 서비스 의존성 설정
+app.dependency_overrides[get_perplexity_service] = lambda: PerplexityService()
 
 @app.get("/", response_class=HTMLResponse)
 async def get_landing(request: Request):
@@ -34,6 +44,7 @@ async def get_landing(request: Request):
         "landing.html", 
         {"request": request}
     )
+
 
 @app.get("/form", response_class=HTMLResponse)
 async def get_form(request: Request):
@@ -47,14 +58,16 @@ async def get_form(request: Request):
 async def recommend_medication(
     request: Request,
     symptoms: str = Form(...),
-    gender: str = Form(None),  # Make optional
-    age: str = Form(None),     # Make optional
-    allergic: str = Form(None)  # Make optional
+    gender: str = Form(None),
+    age: str = Form(None),
+    allergic: str = Form(None),
+    perplexity_service: PerplexityService = Depends(get_perplexity_service)
 ):
+    """Process medication recommendation request"""
     gender = gender or "not specified"
     age = age or "not specified"
     allergic = allergic or "none"
-    """Process medication recommendation request"""
+    
     try:
         # Split and clean symptoms
         symptom_list = [s.strip() for s in symptoms.split(',') if s.strip()]
@@ -75,17 +88,25 @@ async def recommend_medication(
             age, 
             allergic
         )
+        # 디버깅: 약품 정보 로깅
+        logger.info(f"Received medications: {medications}")
+
+        # 이름이 없는 약물이 있는지 확인
+        for i, med in enumerate(medications):
+            if not med.get('name'):
+                logger.warning(f"Medication at index {i} has no name: {med}")
+                # 기본 이름 설정
+                med['name'] = f"Medication {med.get('rank', i+1)}"
         
         if not medications:
-            return templates.TemplateResponse(
-                "index.html", 
-                {
-                    "request": request,
-                    "error": "Failed to get medication recommendations. Please try again."
-                }
-            )
+            raise PerplexityAPIError("Failed to get medication recommendations")
         
-        # Render results page
+        # 관리 목록 가져오기
+        management_lists = perplexity_service.get_symptom_management_lists(symptom_list)
+        to_do_list = management_lists.get("to_do_list", [])
+        do_not_list = management_lists.get("do_not_list", [])
+        
+        # 템플릿에 to_do_list와 do_not_list 변수를 추가합니다
         return templates.TemplateResponse(
             "results.html", 
             {
@@ -94,22 +115,29 @@ async def recommend_medication(
                 "symptoms": symptoms,
                 "gender": gender,
                 "age": age,
-                "allergic": allergic
+                "allergic": allergic,
+                "to_do_list": to_do_list,
+                "do_not_list": do_not_list
             }
         )
         
+    except PerplexityAPIError as e:
+        # 이미 특정 에러 핸들러가 처리할 것이므로 그대로 다시 발생시킴
+        raise
+    except ParsingError as e:
+        # 이미 특정 에러 핸들러가 처리할 것이므로 그대로 다시 발생시킴
+        raise
     except Exception as e:
         logger.error(f"Error in medication recommendation: {e}")
-        return templates.TemplateResponse(
-            "index.html", 
-            {
-                "request": request,
-                "error": "An error occurred while processing your request. Please try again."
-            }
-        )
+        # 일반적인 오류에 대해서는 오류 페이지로 리디렉션
+        raise
 
 @app.get("/api/pharmacies")
-async def get_nearby_pharmacies(zipcode: str):
+async def get_nearby_pharmacies(
+    zipcode: str,
+    perplexity_service: PerplexityService = Depends(get_perplexity_service)
+    
+):
     """Get nearby pharmacies based on zipcode"""
     try:
         api_key = os.getenv("GOOGLE_PLACES_API_KEY")
@@ -218,6 +246,55 @@ async def get_nearby_pharmacies(zipcode: str):
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy"}
+
+# 앱 설정 부분 (app 변수 설정 후)
+@app.exception_handler(PerplexityAPIError)
+async def perplexity_api_exception_handler(request: Request, exc: PerplexityAPIError):
+    """Handle Perplexity API errors"""
+    logger.error(f"Perplexity API Error: {exc}")
+    return templates.TemplateResponse(
+        "error.html",
+        {
+            "request": request,
+            "error_title": "Service Temporarily Unavailable",
+            "error_message": "Our recommendation service is temporarily unavailable. Please try again in a few moments.",
+            "error_detail": str(exc),
+            "debug_mode": os.getenv("DEBUG", "False").lower() == "true"
+        },
+        status_code=503
+    )
+
+@app.exception_handler(ParsingError)
+async def parsing_exception_handler(request: Request, exc: ParsingError):
+    """Handle parsing errors"""
+    logger.error(f"Parsing Error: {exc}")
+    return templates.TemplateResponse(
+        "error.html",
+        {
+            "request": request,
+            "error_title": "Cannot Process Results",
+            "error_message": "We had trouble processing the information. Please try again with different symptoms.",
+            "error_detail": str(exc),
+            "debug_mode": os.getenv("DEBUG", "False").lower() == "true"
+        },
+        status_code=422
+    )
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """Handle all other exceptions"""
+    logger.error(f"Unhandled Exception: {exc}")
+    return templates.TemplateResponse(
+        "error.html",
+        {
+            "request": request,
+            "error_title": "Something Went Wrong",
+            "error_message": "An unexpected error occurred. Our team has been notified.",
+            "error_detail": str(exc),
+            "debug_mode": os.getenv("DEBUG", "False").lower() == "true"
+        },
+        status_code=500
+    )
 
 # Server startup code
 if __name__ == "__main__":

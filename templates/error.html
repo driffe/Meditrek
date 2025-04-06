@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Error - Meditrek</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .error-container {
+            text-align: center;
+            padding: 50px 20px;
+        }
+        
+        .error-icon {
+            font-size: 4rem;
+            color: #e74c3c;
+            margin-bottom: 20px;
+        }
+        
+        .error-title {
+            font-size: 2rem;
+            margin-bottom: 15px;
+            color: #333;
+        }
+        
+        .error-message {
+            font-size: 1.2rem;
+            margin-bottom: 30px;
+            color: #666;
+        }
+        
+        .error-actions {
+            margin-top: 30px;
+        }
+        
+        .retry-btn {
+            display: inline-block;
+            background-color: #4a90e2;
+            color: white;
+            padding: 12px 25px;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 600;
+            margin-right: 15px;
+        }
+        
+        .home-btn {
+            display: inline-block;
+            background-color: #5fd3bc;
+            color: white;
+            padding: 12px 25px;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="error-container">
+            <div class="error-icon">⚠️</div>
+            <h1 class="error-title">{{ error_title }}</h1>
+            <p class="error-message">{{ error_message }}</p>
+            
+            {% if error_detail and debug_mode %}
+            <details>
+                <summary>Detailed Error Information (For Developers)</summary>
+                <pre>{{ error_detail }}</pre>
+            </details>
+            {% endif %}
+            
+            <div class="error-actions">
+                <a href="javascript:history.back()" class="retry-btn">Try Again</a>
+                <a href="/" class="home-btn">Go Home</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

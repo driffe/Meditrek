@@ -2,23 +2,43 @@ import os
 import requests
 import json
 import re
+import time
 from dotenv import load_dotenv
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
+from functools import lru_cache
 import logging
 
 # Load environment variables
 load_dotenv()
 logger = logging.getLogger(__name__)
 
+# 의존성 주입을 위한 함수
+def get_perplexity_service():
+    """Dependency injection provider for PerplexityService"""
+    return PerplexityService()
+
+class PerplexityAPIError(Exception):
+    """Perplexity API 호출 중 발생하는 오류"""
+    pass
+
+class ParsingError(Exception):
+    """응답 파싱 중 발생하는 오류"""
+    pass
+
 class PerplexityService:
+    """
+    Perplexity API service for medication recommendations
+    """
+    
     def __init__(self):
         self.api_key = os.getenv("PERPLEXITY_API_KEY")
         self.api_url = "https://api.perplexity.ai"
+        self.last_response = None
         
         if not self.api_key:
             logger.warning("Perplexity API key not found in environment variables")
     
-    def query_perplexity(self, query: str) -> Optional[str]:
+    def query_perplexity(self, query: str, max_retries: int = 3, timeout: int = 15) -> Optional[str]:
         """Send a query to the Perplexity API using requests."""
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -35,24 +55,50 @@ class PerplexityService:
             ]
         }
         
-        try:
-            response = requests.post(
-                f"{self.api_url}/chat/completions", 
-                headers=headers, 
-                json=payload
-            )
-            response.raise_for_status()
-            
-            # Extract the response text
-            data = response.json()
-            return data["choices"][0]["message"]["content"]
-        except Exception as e:
-            logger.error(f"Error querying Perplexity API: {e}")
-
-            if 'response' in locals():
-                logger.error(f"Response status: {response.status_code}")
-                logger.error(f"Response text: {response.text}")
-            return None
+        retries = 0
+        while retries < max_retries:
+            try:
+                logger.info(f"Sending query to Perplexity API (attempt {retries+1}/{max_retries})")
+                response = requests.post(
+                    f"{self.api_url}/chat/completions", 
+                    headers=headers, 
+                    json=payload,
+                    timeout=timeout
+                )
+                response.raise_for_status()
+                
+                # Extract the response text
+                data = response.json()
+                response_text = data["choices"][0]["message"]["content"]
+                
+                # Store the last response for debugging
+                self.last_response = response_text
+                logger.info(f"Received response from Perplexity API")
+                
+                return response_text
+                
+            except requests.exceptions.Timeout as e:
+                retries += 1
+                wait_time = 2 ** retries  # Exponential backoff
+                logger.warning(f"Attempt {retries}/{max_retries} failed: {e}. Retrying in {wait_time}s...")
+                time.sleep(wait_time)
+                
+            except requests.exceptions.HTTPError as e:
+                logger.error(f"HTTP Error: {e}")
+                raise PerplexityAPIError(f"HTTP Error: {e}")
+                
+            except requests.exceptions.ConnectionError as e:
+                retries += 1
+                wait_time = 2 ** retries  # Exponential backoff
+                logger.warning(f"Connection error (attempt {retries}/{max_retries}): {e}. Retrying in {wait_time}s...")
+                time.sleep(wait_time)
+                
+            except Exception as e:
+                logger.error(f"Unexpected Error: {e}")
+                raise PerplexityAPIError(f"Unexpected Error: {e}")
+        
+        logger.error(f"Failed after {max_retries} retries")
+        return None
     
     def get_medication_recommendations(self, symptoms: List[str], gender: str, age: str, allergic: str) -> Optional[List[Dict[str, Any]]]:
         """Get medication recommendations based on symptoms, gender, age and allergies."""
@@ -98,13 +144,20 @@ class PerplexityService:
                 # Extract medication name
                 name_patterns = [
                     r'(?:brand name|medication|name):\s*([^\n]+)',
-                    r'^(?:\d+\.\s*)?([^:\n]+)(?::|$)'
+                    r'^(?:\d+\.\s*)?([^:\n]+)(?::|$)',
+                    r'(\w+(?:\s+\w+)*\s*\([^)]*)'  
                 ]
 
                 for pattern in name_patterns:
                     name_match = re.search(pattern, section, re.IGNORECASE | re.MULTILINE)
                     if name_match:
-                        medication_info["name"] = name_match.group(1).strip()
+                        medication_name = name_match.group(1).strip()
+                        # 괄호가 닫히지 않은 경우 처리
+                        if '(' in medication_name and ')' not in medication_name:
+                            # 괄호를 제거하거나 괄호 닫기 추가
+                            if medication_name.count('(') == 1:
+                                medication_name = medication_name.split('(')[0].strip()
+                        medication_info["name"] = medication_name
                         break
 
                 # Extract medication type
@@ -147,6 +200,13 @@ class PerplexityService:
                     medications.append(medication_info)
                     rank += 1
 
+            # 디버깅: 이름이 없는 약물이 있는지 확인
+            for i, med in enumerate(medications):
+                if not med.get('name'):
+                    logger.warning(f"Medication at index {i} has no name: {med}")
+                    # 기본 이름 설정
+                    med['name'] = f"Medication {med.get('rank', i+1)}"
+
             return medications
         except Exception as e:
             logger.exception(f"Error parsing medication recommendations: {e}, response_text: {response_text}")  # Log full exception + response
@@ -187,6 +247,7 @@ class PerplexityService:
         
         response_text = self.query_perplexity(query)
         if not response_text:
+            logger.error("No response from Perplexity API for management lists")
             return {"to_do_list": [], "do_not_list": []}
         
         return self.parse_management_lists(response_text)
