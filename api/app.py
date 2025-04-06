@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from perplexity_service import PerplexityService, get_perplexity_service, PerplexityAPIError, ParsingError
+from .perplexity_service import PerplexityService, get_perplexity_service, PerplexityAPIError, ParsingError
 
 load_dotenv()
 
