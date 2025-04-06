@@ -38,7 +38,7 @@ class PerplexityService:
         if not self.api_key:
             logger.warning("Perplexity API key not found in environment variables")
     
-    def query_perplexity(self, query: str, max_retries: int = 2, timeout: int = 5) -> Optional[str]:
+    def query_perplexity(self, query: str, max_retries: int = 3, timeout: int = 15) -> Optional[str]:
         """Send a query to the Perplexity API using requests."""
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -56,6 +56,8 @@ class PerplexityService:
         }
         
         retries = 0
+        last_error = None
+        
         while retries < max_retries:
             try:
                 logger.info(f"Sending query to Perplexity API (attempt {retries+1}/{max_retries})")
@@ -78,9 +80,10 @@ class PerplexityService:
                 return response_text
                 
             except requests.exceptions.Timeout as e:
+                last_error = e
                 retries += 1
-                wait_time = 1  # 고정된 대기 시간으로 변경
                 if retries < max_retries:
+                    wait_time = retries * 2  # 점진적으로 대기 시간 증가
                     logger.warning(f"Attempt {retries}/{max_retries} failed: {e}. Retrying in {wait_time}s...")
                     time.sleep(wait_time)
                 else:
@@ -89,12 +92,20 @@ class PerplexityService:
                 
             except requests.exceptions.HTTPError as e:
                 logger.error(f"HTTP Error: {e}")
+                if e.response.status_code == 429:  # Rate limit
+                    retries += 1
+                    if retries < max_retries:
+                        wait_time = retries * 5  # Rate limit의 경우 더 긴 대기 시간
+                        logger.warning(f"Rate limited. Retrying in {wait_time}s...")
+                        time.sleep(wait_time)
+                        continue
                 return None
                 
             except requests.exceptions.ConnectionError as e:
+                last_error = e
                 retries += 1
-                wait_time = 1  # 고정된 대기 시간으로 변경
                 if retries < max_retries:
+                    wait_time = retries * 2
                     logger.warning(f"Connection error (attempt {retries}/{max_retries}): {e}. Retrying in {wait_time}s...")
                     time.sleep(wait_time)
                 else:
@@ -105,7 +116,7 @@ class PerplexityService:
                 logger.error(f"Unexpected Error: {e}")
                 return None
         
-        logger.error(f"Failed after {max_retries} retries")
+        logger.error(f"Failed after {max_retries} retries. Last error: {last_error}")
         return None
     
     def get_medication_recommendations(self, symptoms: List[str], gender: str, age: str, allergic: str) -> Optional[List[Dict[str, Any]]]:
@@ -113,14 +124,20 @@ class PerplexityService:
         symptoms_text = ", ".join(symptoms)
         
         query = (
-            f"I'm {gender} and {age} years old. "
-            f"I'm allergic to {allergic}. "
-            f"I have the following symptoms: {symptoms_text}. "
-            f"Please recommend exactly 3 over-the-counter medications "
-            f"that would help, ranked by effectiveness (1st, 2nd, and 3rd choice). "
-            f"For each medication, provide: 1) Brand name, 2) Type of Medication ex) pill/tablet, Power, liquid/gel, Capsules, Creams/ointments/lotions 3) Side effects "
-            f"Format as a list with these details for each medication. "
-            f"Give list of medication without introduction ex) Here is list of medication or Based on the information provided"
+            f"As a medical professional, recommend 3 over-the-counter medications for a {age} year old {gender} "
+            f"with allergies to {allergic} who has the following symptoms: {symptoms_text}. "
+            f"Format your response exactly as follows for each medication:\n\n"
+            f"1. Brand name: [medication name]\n"
+            f"Form: [pill/tablet/liquid/gel/capsule/cream/ointment/lotion]\n"
+            f"Side effects: [list main side effects]\n\n"
+            f"2. Brand name: [medication name]\n"
+            f"Form: [pill/tablet/liquid/gel/capsule/cream/ointment/lotion]\n"
+            f"Side effects: [list main side effects]\n\n"
+            f"3. Brand name: [medication name]\n"
+            f"Form: [pill/tablet/liquid/gel/capsule/cream/ointment/lotion]\n"
+            f"Side effects: [list main side effects]\n\n"
+            f"Important: Provide ONLY the medication information in the exact format above. "
+            f"Do not include any additional text, introductions, or explanations."
         )
         
         response_text = self.query_perplexity(query)
@@ -133,9 +150,9 @@ class PerplexityService:
         """Extract medication recommendations from Perplexity response."""
         medications = []
         try:
-            # Split recommendations by rank or numbered items
-            medication_sections = re.split(r'(?:\n\s*\n|\n\s*(?:\d+(?:st|nd|rd|th)\s*choice|choice\s*\d+:|^\d+\.))', response_text)
-            medication_sections = [s for s in medication_sections if s.strip()]
+            # Split recommendations by numbered items
+            medication_sections = re.split(r'\n\s*\d+\.\s*', response_text)
+            medication_sections = [s.strip() for s in medication_sections if s.strip()]
             rank = 1
 
             for section in medication_sections[:3]:  # Process max 3 items
@@ -149,75 +166,35 @@ class PerplexityService:
                     "side_effects": "Not available",
                 }
 
-                # Extract medication name - Improved pattern
-                name_patterns = [
-                    r'(?:brand name|medication|name):\s*([^\n]+)',
-                    r'^(?:\d+\.\s*)?([^:\n]+)(?::|$)',
-                    r'(?:^|\n)([A-Za-z0-9\s\-]+(?:\([^)]*\))?)(?=\s*(?:type|form|side effects|pill|tablet|liquid|gel|capsule|cream|ointment|lotion|powder))'
-                ]
+                # Extract brand name with generic name in parentheses
+                name_match = re.search(r'brand name:\s*([^:\n]+)', section, re.IGNORECASE)
+                if name_match:
+                    name = name_match.group(1).strip()
+                    medication_info["name"] = name
 
-                for pattern in name_patterns:
-                    name_match = re.search(pattern, section, re.IGNORECASE | re.MULTILINE)
-                    if name_match:
-                        medication_name = name_match.group(1).strip()
-                        # Remove any asterisks or special characters
-                        medication_name = re.sub(r'[\*\-]+', '', medication_name).strip()
-                        if medication_name and not medication_name.startswith('**'):
-                            medication_info["name"] = medication_name
-                            break
+                # Extract medication form
+                form_match = re.search(r'form:\s*([^:\n]+)', section, re.IGNORECASE)
+                if form_match:
+                    medication_form = form_match.group(1).strip()
+                    medication_info["medication_type"] = medication_form
 
-                # Extract medication type - Improved pattern
-                type_patterns = [
-                    r'(?:type of medication|form):\s*([^\n]+)',
-                    r'(?:pill|tablet|liquid|gel|capsule|cream|ointment|lotion|powder)s?(?:\s*,\s*(?:pill|tablet|liquid|gel|capsule|cream|ointment|lotion|powder)s?)*'
-                ]
+                # Extract side effects
+                side_effects_match = re.search(r'side effects:\s*([^\n]+(?:\n\s+[^\n]+)*)', section, re.IGNORECASE)
+                if side_effects_match:
+                    side_effects = side_effects_match.group(1).strip()
+                    medication_info["side_effects"] = side_effects
 
-                for pattern in type_patterns:
-                    type_match = re.search(pattern, section, re.IGNORECASE)
-                    if type_match:
-                        if len(type_match.groups()) > 0:
-                            medication_type = type_match.group(1).strip()
-                        else:
-                            medication_type = type_match.group(0).strip()
-                        # Remove any asterisks or special characters
-                        medication_type = re.sub(r'[\*\-]+', '', medication_type).strip()
-                        if medication_type and not medication_type.startswith('**'):
-                            medication_info["medication_type"] = medication_type
-                            break
-
-                # Extract side effects - More resilient approach
-                side_effects_patterns = [
-                    r'side effects:\s*([^\n]+(?:\n\s+[^\n]+)*)',
-                    r'side effects[^:]*?(?:include|are|:)\s*([^\n]+(?:\n\s+[^\n]+)*)',
-                    r'(?:adverse effects|warnings):\s*([^\n]+(?:\n\s+[^\n]+)*)',
-                    r'(?:may cause|can cause):\s*([^\n]+(?:\n\s+[^\n]+)*)'
-                ]
-
-                for pattern in side_effects_patterns:
-                    side_effects_match = re.search(pattern, section, re.IGNORECASE)
-                    if side_effects_match:
-                        try:
-                            side_effects_text = side_effects_match.group(1).strip()
-                            # Remove any asterisks or special characters
-                            side_effects_text = re.sub(r'[\*\-]+', '', side_effects_text).strip()
-                            if side_effects_text and not side_effects_text.startswith('**'):
-                                medication_info["side_effects"] = side_effects_text
-                                break
-                        except IndexError as e:
-                            logger.error(f"IndexError accessing regex group: {e}, pattern: {pattern}, section: {section}")
-
+                # Add medication if name is present
                 if medication_info["name"]:
                     pharmacy_links = self.create_pharmacy_links(medication_info["name"])
                     medication_info.update(pharmacy_links)
                     medications.append(medication_info)
                     rank += 1
+                else:
+                    logger.warning(f"Skipping medication due to missing name: {section}")
 
-            # 디버깅: 이름이 없는 약물이 있는지 확인
-            for i, med in enumerate(medications):
-                if not med.get('name'):
-                    logger.warning(f"Medication at index {i} has no name: {med}")
-                    # 기본 이름 설정
-                    med['name'] = f"Medication {med.get('rank', i+1)}"
+            if not medications:
+                logger.error(f"No medications found in response: {response_text}")
 
             return medications
         except Exception as e:
@@ -240,28 +217,31 @@ class PerplexityService:
     def get_symptom_management_lists(self, symptoms: List[str]) -> Dict[str, List[str]]:
         """Get to-do list and do-not list based on symptoms."""
         symptoms_text = ", ".join(symptoms)
-        
         query = (
-            f"I have the following symptoms: {symptoms_text}. "
-            f"Please provide two lists: "
-            f"1. A list of things I SHOULD do to manage these symptoms (to-do list) "
-            f"2. A list of things I should NOT do (do-not list) "
-            f"Format the response as: "
-            f"TO-DO LIST:\n"
-            f"1. [item]\n"
-            f"2. [item]\n"
-            f"...\n"
-            f"DO-NOT LIST:\n"
-            f"1. [item]\n"
-            f"2. [item]\n"
-            f"..."
+            f"As a medical professional, provide two lists for managing these symptoms: {symptoms_text}. "
+            f"Format exactly as:\n\n"
+            f"DO:\n"
+            f"1. [action]\n"
+            f"2. [action]\n"
+            f"3. [action]\n"
+            f"4. [action]\n"
+            f"5. [action]\n\n"
+            f"DON'T:\n"
+            f"1. [action]\n"
+            f"2. [action]\n"
+            f"3. [action]\n"
+            f"4. [action]\n"
+            f"5. [action]"
         )
         
+        logger.info(f"Sending management lists query for symptoms: {symptoms_text}")
         response_text = self.query_perplexity(query)
-        if not response_text:
-            logger.error("No response from Perplexity API for management lists")
-            return {"to_do_list": [], "do_not_list": []}
         
+        if not response_text:
+            logger.error("No response received from Perplexity API for management lists")
+            return {"to_do_list": [], "do_not_list": []}
+            
+        logger.info(f"Received management lists response: {response_text}")
         return self.parse_management_lists(response_text)
     
     def parse_management_lists(self, response_text: str) -> Dict[str, List[str]]:
@@ -272,24 +252,52 @@ class PerplexityService:
         }
         
         try:
-            # Split the response into to-do and do-not sections
-            sections = response_text.split("DO-NOT LIST:")
-            if len(sections) != 2:
-                return result
-                
-            to_do_section = sections[0].replace("TO-DO LIST:", "").strip()
-            do_not_section = sections[1].strip()
-            
-            # Parse to-do list
-            to_do_items = re.findall(r'\d+\.\s*([^\n]+)', to_do_section)
-            result["to_do_list"] = [item.strip() for item in to_do_items if item.strip()]
-            
-            # Parse do-not list
-            do_not_items = re.findall(r'\d+\.\s*([^\n]+)', do_not_section)
-            result["do_not_list"] = [item.strip() for item in do_not_items if item.strip()]
+            logger.info(f"Parsing management lists from response: {response_text}")
+
+            # First try to find DO section
+            do_match = re.search(r'DO:\s*((?:\d+\.[^\n]+\n?)+)', response_text, re.IGNORECASE)
+            if do_match:
+                do_section = do_match.group(1)
+                do_items = re.findall(r'\d+\.\s*([^\n]+)', do_section)
+                # Clean up items: remove reference numbers and special characters
+                cleaned_items = []
+                for item in do_items:
+                    if item.strip():
+                        # Remove reference numbers like [1][7]
+                        item = re.sub(r'\[\d+\](?:\[\d+\])*', '', item)
+                        # Remove special characters but keep periods and commas
+                        item = re.sub(r'[^\w\s.,()-]', '', item)
+                        cleaned_items.append(item.strip())
+                result["to_do_list"] = cleaned_items
+                logger.info(f"Found {len(result['to_do_list'])} DO items: {result['to_do_list']}")
+            else:
+                logger.warning("Could not find DO section")
+
+            # Then try to find DON'T section
+            dont_match = re.search(r"DON'?T:\s*((?:\d+\.[^\n]+\n?)+)", response_text, re.IGNORECASE)
+            if dont_match:
+                dont_section = dont_match.group(1)
+                dont_items = re.findall(r'\d+\.\s*([^\n]+)', dont_section)
+                # Clean up items: remove reference numbers and special characters
+                cleaned_items = []
+                for item in dont_items:
+                    if item.strip():
+                        # Remove reference numbers like [1][7]
+                        item = re.sub(r'\[\d+\](?:\[\d+\])*', '', item)
+                        # Remove special characters but keep periods and commas
+                        item = re.sub(r'[^\w\s.,()-]', '', item)
+                        cleaned_items.append(item.strip())
+                result["do_not_list"] = cleaned_items
+                logger.info(f"Found {len(result['do_not_list'])} DON'T items: {result['do_not_list']}")
+            else:
+                logger.warning("Could not find DON'T section")
+
+            if not result["to_do_list"] and not result["do_not_list"]:
+                logger.error(f"No items found in either list. Full response: {response_text}")
             
             return result
             
         except Exception as e:
-            logger.exception(f"Error parsing management lists: {e}, response_text: {response_text}")
+            logger.exception(f"Error parsing management lists: {e}")
+            logger.error(f"Failed response text: {response_text}")
             return result

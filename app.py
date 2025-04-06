@@ -77,10 +77,10 @@ async def recommend_medication(
                 "index.html", 
                 {
                     "request": request,
-                    "error": "Please enter at least one symptom."
+                    "error": "증상을 하나 이상 선택해주세요."
                 }
             )
-        
+
         # Get medication recommendations via Perplexity API
         medications = perplexity_service.get_medication_recommendations(
             symptom_list, 
@@ -88,18 +88,19 @@ async def recommend_medication(
             age, 
             allergic
         )
-        # 디버깅: 약품 정보 로깅
         logger.info(f"Received medications: {medications}")
 
-        # 이름이 없는 약물이 있는지 확인
-        for i, med in enumerate(medications):
-            if not med.get('name'):
-                logger.warning(f"Medication at index {i} has no name: {med}")
-                # 기본 이름 설정
-                med['name'] = f"Medication {med.get('rank', i+1)}"
+        if medications is None:
+            raise PerplexityAPIError("Failed to get medication recommendations")
         
         if not medications:
-            raise PerplexityAPIError("Failed to get medication recommendations")
+            return templates.TemplateResponse(
+                "index.html",
+                {
+                    "request": request,
+                    "error": "죄송합니다. 해당 증상에 대한 추천 약물을 찾을 수 없습니다."
+                }
+            )
         
         # 관리 목록 가져오기
         management_lists = perplexity_service.get_symptom_management_lists(symptom_list)
