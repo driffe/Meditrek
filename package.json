@@ -1,5 +1,14 @@
 {
-  "version": 2,
+  "name": "meditrek",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "python api/app.py",
+    "build": "pip install -r requirements.txt"
+  },
+  "dependencies": {
+    "@vercel/python": "^3.1.0"
+  },
   "functions": {
       "api/app.py": {
           "memory": 1024,

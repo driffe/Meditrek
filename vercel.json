@@ -1,12 +1,11 @@
 {
     "version": 2,
-    "functions": {
-        "api/app.py": {
-            "memory": 1024,
-            "maxDuration": 10,
-            "runtime": "python3.9"
+    "builds": [
+        {
+            "src": "api/app.py",
+            "use": "@vercel/python"
         }
-    },
+    ],
     "routes": [
         {
             "src": "/_vercel/insights/script.js",
