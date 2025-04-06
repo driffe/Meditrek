@@ -1,6 +1,6 @@
 {
     "functions": {
-        "app.py": {
+        "api/app.py": {
             "memory": 1024,
             "maxDuration": 10,
             "runtime": "@vercel/python@3.1.0"
@@ -17,7 +17,7 @@
         },
         {
             "src": "/(.*)",
-            "dest": "app.py"
+            "dest": "/api/app.py"
         }
     ]
 }
